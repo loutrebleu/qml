@@ -23,17 +23,18 @@ class Evaluator:
     def __call__(self, params: NDArray = None, model: Model = None) -> float:
         if model is None:
             model = self._model
-        return Evaluator.evaluate(
+        return self.evaluate(
             model, params, self._xs, self._ys, shots=self.shots
         )
 
-    @staticmethod
+    @classmethod
     def evaluate(
+            cls,
             model: Model,
             params: NDArray,
             xs: NDArray,
             ys: NDArray,
-            shots: int = 50
+            shots: int = 50,
     ) -> float:
         predicts = np.asarray([
             model.forward(x, params=params, shots=shots)
@@ -42,3 +43,5 @@ class Evaluator:
         errors = ys - predicts
         loss = np.square(errors).mean()
         return loss
+    
+
