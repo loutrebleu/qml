@@ -1,15 +1,22 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
+import json
+
+from enum import Enum
+
 from numpy.typing import NDArray
+
 from qiskit import QuantumCircuit
 from qiskit.circuit import Parameter
-from collections import namedtuple
 
-from .gate import GateInfo, get_gateset, Gate
+from .gate import Gateset, Gate, GateInfo
+from ..tools.random import XRandomGenerator
+from ..tools.typing import Vector, IntVector
 
 
 class Unit:
+    
     VALUE_MAX = 2 * np.pi
 
     def __init__(
@@ -17,18 +24,17 @@ class Unit:
             name: str,
             gates: list[Gate],
             params: list[Parameter],
-            values: list[float] | NDArray,
+            values: Vector,
     ):
         self._name = name
         self._gates = gates
         self._params = params
-        self._values = np.asarray(values) % self.VALUE_MAX
+        self._values = self.format(values)
 
     def feed_dict(self, values=None) -> dict[str, float]:
         if values is None:
             values = self.values
-        if not hasattr(values, "__len__"):
-            values = [values]
+        values = self.format(values)
         assert len(values) == len(
             self.parameters), f"Length of values {len(values)} must be equal to number of parameters {len(self.values)}"
 
@@ -45,54 +51,16 @@ class Unit:
         return qc
 
     @classmethod
-    def generate_random_unit(
-            cls,
-            name: str,
-            num_qubit: int,
-            num_gate: int,
-            gateset: dict[str, GateInfo] = None,
-    ):
-        if gateset is None:
-            gateset = get_gateset(num_qubit)
+    def format(cls, values: Vector) -> NDArray:
+        values = np.asarray(values)
+        if values.ndim == 0:
+            values = values[np.newaxis]
+        return values % cls.VALUE_MAX
 
-        # select gate at random
-        gate_names_on_set = list(gateset.keys())
-        gate_names = np.random.choice(gate_names_on_set, size=num_gate, replace=True)
-
-        # select qubits to apply gates
-        qubits = np.random.randint(0, num_qubit, size=num_gate)
-
-        return cls.new_with_gate_names_and_qubits(name, gate_names, qubits, gateset)
-
-    @classmethod
-    def new_with_gate_names_and_qubits(
-            cls,
-            name: str,
-            gate_names: list[str],
-            qubits: list[int],
-            gateset: dict[str, GateInfo]
-    ):
-        gate_infos = [gateset[gate_name] for gate_name in gate_names]
-
-        # build instance of gates and parameters
-        gates = []
-        params = []
-        for gate_info, qubit in zip(gate_infos, qubits):
-            if not gate_info.trainable:
-                gates.append(Gate.new_with_info(gate_info, qubit))
-                continue
-
-            pname = f"param_{len(params)}"
-            if name is not None:
-                pname = name + "_" + pname
-            param = Parameter(pname)
-            params.append(param)
-            gates.append(Gate.new_with_info(gate_info, qubit, param))
-
-        # initialize parameter values
-        values = np.zeros_like(params)
-
-        return cls(name, gates, params, values)
+    def apply_to_qc(self, qc: QuantumCircuit) -> QuantumCircuit:
+        for gate in self._gates:
+            gate.apply_to_qc(qc)
+        return qc
 
     @property
     def values(self):
@@ -125,85 +93,108 @@ class Unit:
     @property
     def num_param(self):
         return len(self._params)
-
-
-class EmbedUnit(Unit):
-
-    def __init__(
-            self,
-            name: str,
-            gates: list[Gate],
-            params: list[Parameter],
-            values: list[float] | NDArray,
-    ):
-        super().__init__(name, gates, params, values)
-        self.pre_process = lambda x: x
-
-    def feed_dict(self, values=None) -> dict[str, float]:
-        if values is None:
-            values = self.values
-        values = self.pre_process(values)
-        return super().feed_dict(values=values)
-
-    @staticmethod
-    def generate_ry_arcsin_embed_unit(
-            name: str,
-            num_qubit: int,
-            dim_input: int,
-            gateset: dict[str, GateInfo] = None,
-    ):
-        if gateset is None:
-            gateset = get_gateset(num_qubit)
-        gates = ["ry" for _ in range(num_qubit)]
-        qubits = [i for i in range(num_qubit)]
-
-        unit = EmbedUnit.new_with_gate_names_and_qubits(
-            name, gates, qubits, gateset
+    
+    def to_string(self):
+        ret = self._name + "|"
+        ret += ",".join([g.gate.name for g in self.gates])
+        ret += "/"
+        ret += ",".join([str(g.qubit) for g in self.gates])
+        ret += "/"
+        ret += ",".join([f"{p:5.3f}" for p in self.parameters])
+        return ret
+    
+    def to_dict(self):
+        data = dict(
+            name=self._name,
+            gates=[g.gate.name for g in self.gates],
+            qubits=[int(g.qubit) for g in self.gates],
+            params=[np.floor(p).item() for p in self.parameters]
         )
-        unit.pre_process = lambda x: [
-            np.arcsin(x) for _ in range(num_qubit)
-        ]
-        return unit
+        return data
+    
+    def to_json(self):
+        data = self.to_dict()
+        str_data = json.dumps(data)
+        return str_data
 
 
-PresetUnitInfo = namedtuple('PresetUnitInfo', ["gate_names", "qubits"])
 
-
-class EntangleUnit(Unit):
-    NEIGHBOR_INFOS = {
-        2: PresetUnitInfo(
-            ["cz"], [0]
-        ),
-        3: PresetUnitInfo(
-            ["cz", "cz", "cz"],
-            [0, 1, 2]
-        ),
-    }
+class UnitManager:
 
     def __init__(
             self,
-            name: str,
-            gates: list[Gate],
-            params: list[Parameter],
-            values: list[float] | NDArray,
+            num_qubits: int,
+            num_gates: int,
+            seed: int = None,
     ):
-        super().__init__(name, gates, params, values)
+        self._rng = XRandomGenerator(seed=seed)
+        self._nq = num_qubits
+        self._ng = num_gates
 
-    @staticmethod
-    def new_neighbor_cz(name: str, num_qubit: int, gateset: dict[str, GateInfo] = None):
+        self.gset = Gateset.set_num_qubits(num_qubits)
+
+        self.num_generated = 0
+    
+    def generate_random_unit(
+            self,
+            num_gate: int = None,
+            gateset: dict[str, GateInfo] = None,
+            name: str = None,
+            random_values: bool = False,
+    ) -> Unit:
         if gateset is None:
-            gateset = get_gateset(num_qubit)
-        infos = EntangleUnit.NEIGHBOR_INFOS[num_qubit]
-        return EntangleUnit(name, EntangleUnit._new_with_infos(infos, gateset), [], [])
+            gateset = Gateset.set_num_qubits(self._nq, seed=self._rng.new_seed())
+        ng = num_gate if num_gate is not None else self._ng
+        
+        # select gate at random
+        infos = [gateset.get_at_random() for _ in range(ng)]
+        qubits = self._rng.integers(0, self._nq, size=ng)
+        return self.from_info_and_qubits(infos, qubits, name=name, random_values=random_values)
 
-    @staticmethod
-    def _new_with_infos(infos, gateset):
-        gate_infos: list[GateInfo] = [
-            gateset[gname]
-            for gname in infos.gate_names
+    def from_info_and_qubits(self, infos: list[GateInfo], qubits: IntVector, name: str = None, random_values: bool = False, use_name_direct: bool = False) -> Unit:
+        if name is None:
+            name = "unit"
+        if not use_name_direct:
+            name = name + f"_{self.num_generated}"
+
+        gates = []
+        params = []
+
+        for info, qubit in zip(infos, qubits):
+            if not info.trainable:
+                gates.append(Gate.new_with_info(info, qubit))
+                continue
+
+            pname = f"param_{len(params)}"
+            pname = "_".join([name, pname])
+            param = Parameter(pname)
+            params.append(param)
+            gates.append(Gate.new_with_info(info, qubit, param))
+
+        values = np.zeros_like(params) if not random_values else self._rng.uniform(low=0, high=self.VALUE_MAX, size=len(params))
+        self.num_generated += 1
+
+        return Unit(name, gates, params, values)
+
+    def from_string(self, genome: str):
+        uname, strunit_vals = genome.split("|")
+        gnames, qubits, params = [
+            strunit_part.split(",")
+            for strunit_part in strunit_vals.split("/")
         ]
-        gates = [
-            Gate.new_with_info(info, qubit)
-            for info, qubit in zip(gate_infos, infos.qubits)
-        ]
-        return gates
+        infos = [self.gset.get(gname) for gname in gnames]
+        qubits = [int(qubit) for qubit in qubits]
+        params = np.asarray([float(param) for param in params])
+
+        unit = self.from_info_and_qubits(infos, qubits, uname, use_name_direct=True)
+        unit.parameters = params
+        return unit
+    
+    def from_json(self, genome: str):
+        data = json.loads(genome)
+        infos = [self.gset.get(gname) for gname in data["gates"]]
+        qubits = [int(qubit) for qubit in data["qubits"]]
+        params = np.asarray([float(param) for param in data["params"]])
+        unit = self.from_info_and_qubits(infos, qubits, data["name"], use_name_direct=True)
+        unit.parameters = params
+        return unit

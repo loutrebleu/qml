@@ -42,10 +42,10 @@ class Logger:
     @property
     def result_energies(self):
         return pd.DataFrame(dict(
-            step=np.asarray(self._step_total),
-            proposed=np.asarray(self._energy_proposed),
-            current=np.asarray(self._energy_current),
-            best=np.asarray(self._energy_best),
+            step=self._step_total,
+            proposed=self._energy_proposed,
+            current=self._energy_current,
+            best=self._energy_best,
         ))
 
     @property
@@ -61,8 +61,8 @@ class Logger:
     @property
     def result_test(self):
         return pd.DataFrame(dict(
-            step=np.asarray(self._step_test),
-            energy=np.asarray(self._energy_test),
+            step=self._step_test,
+            energy=self._energy_test,
         ))
 
     def draw(self, fig_name: str = None):
