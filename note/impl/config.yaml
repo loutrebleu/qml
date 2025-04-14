@@ -1,0 +1,26 @@
+circuit:
+  num_qubits: 2
+  num_gates: 3
+  num_layers: 3
+  shots: 50
+
+qml:
+  db:
+    dim_input: 1
+    dim_output: 1
+  num_train: 10
+
+dpo:
+  training:
+    num_epochs: 10
+    lr: 0.01
+    cpo: False
+    db:
+      filename: "dpo_database.txt"
+      batch_size: 10
+  validation:
+    interval: 10
+    num_rounds: 3
+    dbsize: 10
+  policy:
+    dim_hiddens: [32, 32]

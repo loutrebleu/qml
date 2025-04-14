@@ -14,5 +14,6 @@ class MLDatasetGenerator:
     def generate(self, size: int):
         func = self.fgen.generate()
         xs = self.rng.uniform(-1, 1, size)
-        ys = func(xs)
+        ys = func(xs).reshape((size, -1))
+        xs = xs.reshape((size, -1))
         return Dataset(xs, ys)

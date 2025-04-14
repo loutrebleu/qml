@@ -76,7 +76,7 @@ class DPODataBatch:
     
     @property
     def size(self):
-        pass
+        return len(self.data.wseries)
 
     @property
     def wserieses(self):
@@ -117,11 +117,15 @@ class DPODataLoaderIter:
         bdata = [self.db[idx] for idx in idxs]
         bdata = DPOData(
             [data.wseries for data in bdata],
-            [data.gindices for  data in bdata],
-            [data.qubits for  data in bdata],
-            [data.losses for  data in bdata],
+            [data.gindices for data in bdata],
+            [data.qubits for data in bdata],
+            [data.losses for data in bdata],
         )
         return DPODataBatch(bdata, self.nq, self.ngc)
+    
+    def __len__(self):
+        return len(self.indices)
+
 
 class DPODataLoader:
     
@@ -136,10 +140,11 @@ class DPODataLoader:
     
     @property
     def size(self):
-        return int(np.ceil(self.dataset.size / self.batch_size))
+        return int(np.floor(self.dataset.size / self.batch_size))
     
     def __iter__(self):
         indices = np.arange(self.dataset.size).astype(int)
         indices = self.rng.permutation(indices)
+        indices = indices[:self.size * self.batch_size]
         batched_indices = indices.reshape((self.size, self.batch_size))
         return DPODataLoaderIter(self.dataset, batched_indices, self.num_qubits, self.num_gate_classes)

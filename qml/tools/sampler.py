@@ -30,8 +30,8 @@ class CandidateSampler:
     
     def as_logps(self, logits):
         logits_gate, logits_qbit = self.divide_gate_and_qubit(logits)
-        logps_gate = nn.functional.log_softmax(logits_gate, dim=-1)
-        logps_qbit = nn.functional.log_softmax(logits_qbit, dim=-1)
+        logps_gate = nn.functional.log_softmax(logits_gate, dim=-1).view(len(logits), self.ng, -1)
+        logps_qbit = nn.functional.log_softmax(logits_qbit, dim=-1).view(len(logits), self.ng, -1)
         return logps_gate, logps_qbit
     
     def as_probs(self, logits, as_numpy=False):
@@ -55,7 +55,7 @@ class CandidateSampler:
         if not isinstance(x, torch.Tensor):
             x = torch.from_numpy(x).float()
         if x.ndim < 2:
-            x = x.unsqueeze()
+            x = x.unsqueeze(0)
         logits = self.policy.forward(x)
         probs_gate, probs_qbit = self.as_probs(logits, as_numpy=True)
 

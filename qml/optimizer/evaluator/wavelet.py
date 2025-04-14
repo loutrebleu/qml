@@ -91,6 +91,10 @@ class WaveletEvalResult(EvalResult):
         return self.es
     
     @property
+    def mse(self):
+        return np.mean(self.errors ** 2) * 0.5
+    
+    @property
     def ps(self):
         return self._ps.copy()
     

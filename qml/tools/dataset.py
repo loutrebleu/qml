@@ -47,3 +47,11 @@ class Dataset:
     @staticmethod
     def generate_dataset(num_data: int, func: Callable, seed: int = None) -> "Dataset":
         return _generate_dataset(num_data, func, seed=seed)
+    
+    @property
+    def dim_input(self) -> int:
+        return self._xs.shape[1]
+    
+    @property
+    def dim_output(self) -> int:
+        return self._ys.shape[1]
