@@ -10,7 +10,7 @@ qml:
     dim_output: 1
     dim_polynomial: 4
     size: 10
-  num_train: 30
+  num_train: 50
 
 dpo:
   training:
