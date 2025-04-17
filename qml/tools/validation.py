@@ -21,7 +21,6 @@ def get_base_qc(num_qubits, dim_input, dim_output, shots):
 def validate_old(sampler, datasets, num_qubits, num_rounds, num_train_steps, dim_wavelet, wavelet, reg_loss, shots=50):
 
     losses = []
-    print(shots)
     
     for dataset in tqdm(datasets):
         model = get_base_qc(num_qubits, dataset.dim_input, dataset.dim_output, shots)
